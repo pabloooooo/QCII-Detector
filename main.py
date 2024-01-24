@@ -4,6 +4,8 @@ import argparse
 import wave
 import queue
 
+import homeas
+
 import numpy as np
 import sounddevice as sd
 import time
@@ -58,6 +60,8 @@ last_code = 0
 listening = False
 listening_open = 0
 
+tone_detected = False
+
 
 def callback(indata, frames, time_info, status):
     if status:
@@ -74,12 +78,13 @@ last_code = 0
 
 cur_chunk = 0
 audio_queue = queue.Queue()
+global_wav_name = None
 
 
 def process(indata, is_realtime, rate):
     global tones_counter, tones_open, last_code, listening, listening_open
     global first_code_open, first_code_open_at, second_code_open, second_code_open_at
-    global cur_chunk, audio_queue
+    global cur_chunk, audio_queue, tone_detected, global_wav_name
 
     def get_time():
         if is_realtime:
@@ -128,6 +133,9 @@ def process(indata, is_realtime, rate):
         if a_tone_accuracy > .8 and b_tone_accuracy > .8:
             logging.info("Tone A : " + str(a_tone_accuracy) + " Tone B : " + str(b_tone_accuracy))
             logging.critical(f"TONE DETECTED @ {datetime.now() if is_realtime else get_time()}")
+            logging.info("File" + str(global_wav_name))
+            tone_detected = True
+            homeas.send(global_wav_name)
             audio_queue = queue.Queue()
 
     cur_chunk += 1
@@ -144,6 +152,7 @@ if __name__ == '__main__':
         list_audio_devices()
     elif args.w:
         wave_file = args.w
+        global_wav_name = wave_file.split('/')[-1]
         wf = wave.open(wave_file, 'rb')
         if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
             logging.warning("Unsupported audio format. Please use a mono WAV file with 16-bit samples at 44100 Hz.")
@@ -160,6 +169,11 @@ if __name__ == '__main__':
             # logging.debug("Sleeping: " + str(chunk_duration - (start_time - time.time())))
             # time.sleep(chunk_duration - (start_time - time.time()))
         wf.close()
+
+        if tone_detected:
+            sys.exit(3)
+        else:
+            sys.exit(0)
     else:
         with sd.InputStream(callback=callback, channels=1, samplerate=RATE, blocksize=CHUNK, device=MIC_DEVICE_INDEX):
             input("Press Enter to stop...\n")
